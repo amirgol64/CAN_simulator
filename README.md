@@ -185,6 +185,120 @@ CAN_simulator/
 └── README.md
 ```
 
+### Python Files
+
+#### `can_monitor.py` — CAN Monitor Library
+
+The core engine. No GUI dependencies — can be imported standalone in any Python project.
+
+| Component | Description |
+|---|---|
+| `CANMonitor` | Main class. Connects to PCAN bus, decodes frames, fires callbacks |
+| `CANMonitor.start()` | Spawns a daemon thread that reads and decodes CAN frames |
+| `CANMonitor.stop()` | Gracefully shuts down the bus connection |
+| `CANMonitor.subscribe(signal, cb)` | Register a callback for a named signal or `"*"` for all |
+| `CANMonitor.get(signal)` | Poll the latest value of any signal |
+| `CANMonitor.get_all()` | Snapshot dict of all current signal values |
+| `CANMonitor.inject(signal, value)` | Push a simulated or virtual value into the pipeline |
+| `CANMonitor.db` | Access to the underlying `cantools` database |
+| `CANMonitor.rx_rate` | Current message receive rate in messages/second |
+| `SIGNAL_DESCRIPTIONS` | Dict mapping raw signal names → human-readable labels |
+
+**Constructor parameters:**
+
+```python
+CANMonitor(
+    channel="PCAN_USBBUS2",   # PCAN channel name
+    bitrate=500_000,           # CAN bus bitrate in bps
+    retry_interval=3.0,        # seconds between reconnect attempts
+    dbc_path=None,             # path to a .dbc file (None = use built-in)
+)
+```
+
+**Virtual / derived signals** computed automatically on every decoded frame:
+
+| Signal | Derived from | Description |
+|---|---|---|
+| `soc` | `BT_SOC` | Battery state of charge alias |
+| `energy_usage_kw` | `BT_C × BT_V / 1000` | Instantaneous power in kW |
+| `energy_usage_stat` | `BT_C` sign | `"discharge"` / `"generate"` / `"free"` |
+| `vs` | `VS < 0.5` | Vehicle stationary flag (`"0"` / `"1"`) |
+| `ss` | `VS < 0.5` | Standstill state (`"on"` / `"off"`) |
+| `truck_eng_stat` | `AETQ > 0` | Engine status (`"on"` / `"off"`) |
+
+---
+
+#### `can_dashboard_gui.py` — Dashboard GUI
+
+Built on `tkinter`. Imports `CANMonitor` and renders signal values in real time.
+
+| Component | Description |
+|---|---|
+| `CANDashboard` | Main `tk.Tk` window — wires monitor, builds UI, runs update loop |
+| `_build_config_bar()` | Top bar: COM port dropdown + CONNECT, DBC path + BROWSE/LOAD |
+| `_build_ui()` | Header, column labels, scrollable signal area, footer |
+| `_rebuild_signals()` | Clears and recreates all signal rows from the current DBC |
+| `_on_connect_clicked()` | Stops monitor, creates new one on selected channel, restarts |
+| `_on_dbc_browse()` | Opens file-picker dialog filtered to `.dbc` files |
+| `_on_dbc_load()` | Loads selected DBC, restarts monitor, rebuilds signal rows |
+| `_schedule_ui_update()` | 20 Hz loop: flushes pending signal updates to the UI |
+| `SignalRow` | One row widget — signal name, description, live value, unit |
+| `Sparkline` | Mini trend chart canvas (available, disabled by default) |
+
+**Data flow:**
+
+```
+CAN bus frames
+    ↓  (python-can)
+CANMonitor._rx_loop()          ← daemon thread
+    ↓  cantools decode
+CANMonitor._dispatch()         ← fires callbacks + stores values
+    ↓  thread-safe queue
+CANDashboard._on_signal()      ← writes to _pending dict
+    ↓  50 ms timer (20 Hz)
+CANDashboard._schedule_ui_update()
+    ↓  batch flush
+SignalRow.update_value()       ← updates label text
+```
+
+---
+
+#### `can_simulator_sender.py` — CAN Frame Simulator
+
+Generates a realistic fake vehicle on the CAN bus. Use this when no real hardware is available.
+
+| Component | Description |
+|---|---|
+| `VehicleSimState` | Physics model: speed, RPM, SOC, temperatures, pedals, gear |
+| `VehicleSimState.step(dt)` | Advance simulation by `dt` seconds with Gaussian noise |
+| `VehicleSimState.signal_values()` | Returns dict of all signal values for the current state |
+| `clamp_to_signal(sig, val)` | Clamps a value to the signal's defined min/max range |
+| `main()` | Connects to PCAN bus and transmits all 11 messages at 10 Hz |
+
+Signals simulated per cycle:
+
+- Vehicle speed (oscillating 0–120 km/h), RPM, gear
+- Accelerator / brake pedal position
+- Motor torque request and feedback
+- Battery SOC, voltage, current
+- Motor and battery temperatures
+- IMU pitch, roll, yaw (sinusoidal)
+- Wheel speed sensor frequencies
+- Articulation angle
+
+---
+
+#### `simpleTest.py` — Minimal Example
+
+```python
+from can_monitor import CANMonitor
+mon = CANMonitor(channel="PCAN_USBBUS2")
+mon.start()
+# prints SOC value + unit every second
+```
+
+Use this as a starting point for custom integrations.
+
 ---
 
 ## Requirements
