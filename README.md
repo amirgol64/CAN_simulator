@@ -27,34 +27,6 @@ Both tools share the same dark UI theme, COM port selector, and DBC file loader 
 
 ### Two-Phase Architecture
 
-```
- ┌─────────────────────────────────────────────────────────────┐
- │                           PC                                │
- │                                                             │
- │   ┌─────────────────────────────────────────────────────┐   │
- │   │  can_simulator_sender.py          Phase 1 — TX      │   │
- │   │  Reads DBC · generates fake signals · sends frames  │   │
- │   └─────────────────────────────────────────────────────┘   │
- │                                                             │
- │   ┌─────────────────────────────────────────────────────┐   │
- │   │  can_dashboard_gui.py             Phase 2 — RX      │   │
- │   │  Receives frames · decodes via DBC · shows live UI  │   │
- │   └─────────────────────────────────────────────────────┘   │
- │                                                             │
- └──────────────┬──────────────────────────┬──────────────────┘
-                │ USB                       │ USB
-       ┌────────▼─────────┐       ┌─────────▼────────┐
-       │   PCAN-USB 1     │       │   PCAN-USB 2     │
-       │   PCAN_USBBUS1   │       │   PCAN_USBBUS2   │
-       │   (Simulator TX) │       │   (Dashboard RX) │
-       └────────┬─────────┘       └─────────┬────────┘
-             [120 Ω]                      [120 Ω]
-                │                           │
-                └──────────── CAN ──────────┘
-                          CAN_H / CAN_L
-                            500 kbps
-```
-
 ```mermaid
 graph TD
     PC["💻 PC\n──────────────────────\n📡 can_simulator_sender.py\nPhase 1 · TX\n──────────────────────\n📺 can_dashboard_gui.py\nPhase 2 · RX"]
