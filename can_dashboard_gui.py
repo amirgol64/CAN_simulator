@@ -39,6 +39,63 @@ RED        = "#f85149"
 GREEN      = "#3fb950"
 YELLOW     = "#d29922"
 
+# ─── WINDOW / HEADER ICON ───────────────────────────────────────────────────
+
+def _draw_can_icon(size: int = 32, tx: bool = False) -> tk.PhotoImage:
+    """
+    Programmatically draw a CAN bus topology icon.
+      tx=False  →  teal down-arrow above centre node  (receive / dashboard)
+      tx=True   →  orange up-arrow above centre node  (transmit / simulator)
+    """
+    BG, TEAL, ORG = "#0d1117", "#00d4aa", "#ff6b35"
+
+    img = tk.PhotoImage(width=size, height=size)
+    bg_row = "{" + (" ".join([BG] * size)) + "}"
+    for y in range(size):
+        img.put(bg_row, (0, y))
+
+    def px(x, y, c):
+        if 0 <= x < size and 0 <= y < size:
+            img.put(c, to=(x, y, x + 1, y + 1))
+
+    bus_y   = int(size * 0.68)
+    node_r  = max(3, size // 10)
+    node_xs = [int(size * 0.18), int(size * 0.50), int(size * 0.82)]
+    node_cy = bus_y - node_r - 4
+
+    # Horizontal bus line
+    for x in range(3, size - 3):
+        px(x, bus_y,     TEAL)
+        px(x, bus_y + 1, TEAL)
+
+    # Nodes + vertical stubs
+    for nx in node_xs:
+        for y in range(node_cy + node_r, bus_y + 2):
+            px(nx,     y, TEAL)
+            px(nx + 1, y, TEAL)
+        for dy in range(-node_r, node_r + 1):
+            for dx in range(-node_r, node_r + 1):
+                if dx * dx + dy * dy <= node_r * node_r:
+                    px(nx + dx, node_cy + dy, ORG)
+
+    # Direction arrow above centre node
+    cx  = int(size * 0.50)
+    tip = node_cy - node_r - 2
+    col = ORG if tx else TEAL
+    if tx:
+        for i in range(5):                           # shaft up
+            px(cx, tip - i, col); px(cx + 1, tip - i, col)
+        for w in range(1, 4):                        # arrowhead
+            px(cx - w, tip + w - 1, col); px(cx + 1 + w, tip + w - 1, col)
+    else:
+        for i in range(5):                           # shaft down
+            px(cx, tip + i, col); px(cx + 1, tip + i, col)
+        for w in range(1, 4):                        # arrowhead
+            px(cx - w, tip + 4 - w, col); px(cx + 1 + w, tip + 4 - w, col)
+
+    return img
+
+
 # ─── SPARKLINE CANVAS ───────────────────────────────────────────────────────
 
 class Sparkline(tk.Canvas):
@@ -137,6 +194,9 @@ class CANDashboard(tk.Tk):
         self._pending: dict = {}
         self._lock = threading.Lock()
 
+        self._icon = _draw_can_icon(32, tx=False)
+        self.iconphoto(False, self._icon)
+
         self._build_ui()
         self._monitor.start()
         self._schedule_ui_update()
@@ -150,10 +210,9 @@ class CANDashboard(tk.Tk):
         hdr = tk.Frame(self, bg=PANEL, pady=10)
         hdr.pack(fill=tk.X)
 
-        tk.Label(hdr, text="●  CAN", bg=PANEL, fg=ACCENT,
-                 font=("Courier New", 18, "bold")).pack(side=tk.LEFT, padx=16)
+        tk.Label(hdr, image=self._icon, bg=PANEL).pack(side=tk.LEFT, padx=(12, 4))
         tk.Label(hdr, text="CAN DASHBOARD", bg=PANEL, fg=TEXT_PRI,
-                 font=("Courier New", 14)).pack(side=tk.LEFT)
+                 font=("Courier New", 14, "bold")).pack(side=tk.LEFT)
 
         self.status_dot = tk.Label(hdr, text="⬤", bg=PANEL, fg=RED,
                                    font=("Courier New", 14))

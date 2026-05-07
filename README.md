@@ -119,13 +119,35 @@ python can_dashboard_gui.py --channel PCAN_USBBUS1 --bitrate 500000
 
 ### CAN Simulator (no hardware needed)
 
-Generates a physics-based fake vehicle on the bus for testing:
+Generates a physics-based fake vehicle on the bus for testing.  
+Launching without arguments opens the GUI:
 
 ```bash
 python can_simulator_sender.py
 ```
 
-Run the sender in one terminal and the dashboard in another to see live simulated data.
+![Simulator Screenshot](docs/screenshots/simulator.png)
+
+#### Simulator GUI controls
+
+| Control | Description |
+|---|---|
+| **COM PORT** dropdown | PCAN channel to transmit on |
+| **BITRATE** dropdown | 125k / 250k / 500k / 1M |
+| **TX INTERVAL** dropdown | Frame period: 1 ms – 100 ms |
+| **DBC FILE** + BROWSE | Load a custom DBC to transmit its message set |
+| **LOAD DBC** button | Apply the selected DBC (only when stopped) |
+| **▶ START** / **■ STOP** | Toggle simulation on/off |
+| Live values panel | Shows Speed, RPM, SOC, Battery V/A, Gear, Motor Temp, Distance in real time |
+| Transmit log | Scrollable log of cycle snapshots and connection events |
+
+Run the simulator in one window and the dashboard in another to see live data without real hardware.
+
+#### Headless / CLI mode
+
+```bash
+python can_simulator_sender.py --no-gui --channel PCAN_USBBUS1 --bitrate 500000 --interval 0.01
+```
 
 ### Library usage (headless)
 
@@ -273,7 +295,8 @@ Generates a realistic fake vehicle on the CAN bus. Use this when no real hardwar
 | `VehicleSimState.step(dt)` | Advance simulation by `dt` seconds with Gaussian noise |
 | `VehicleSimState.signal_values()` | Returns dict of all signal values for the current state |
 | `clamp_to_signal(sig, val)` | Clamps a value to the signal's defined min/max range |
-| `main()` | Connects to PCAN bus and transmits all 11 messages at 10 Hz |
+| `SimulatorApp` | `tk.Tk` GUI window — config bar, live stats, transmit log, start/stop |
+| `main()` | Headless CLI entry point (`--no-gui` flag) |
 
 Signals simulated per cycle:
 
