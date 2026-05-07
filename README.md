@@ -1,47 +1,78 @@
-# CAN Dashboard
+# CAN Simulator & Dashboard
 
-A real-time CAN bus monitor and dashboard built with Python and Tkinter.  
-Connects to a PCAN-USB adapter, decodes frames via a DBC file, and displays all signals live with values and units.
+A two-phase CAN bus development tool built with Python and Tkinter.
 
-![Dashboard Screenshot](docs/screenshots/dashboard.png)
+| Phase | Script | Role |
+|:---:|---|---|
+| **1** | `can_simulator_sender.py` | Read a DBC file, generate physics-based fake signals, transmit CAN frames |
+| **2** | `can_dashboard_gui.py` | Connect to a live CAN bus, decode frames via DBC, display all signals in real time |
 
----
-
-## Features
-
-- **Live signal display** — all CAN signals grouped by message ID, updating at 20 Hz
-- **COM port selector** — choose any PCAN USB channel (PCAN\_USBBUS1–8) from a dropdown and reconnect on the fly
-- **DBC file loader** — browse and load any `.dbc` file; signal rows rebuild automatically from the new database
-- **Built-in DBC** — ships with a full RC40 vehicle bus definition (speed, torque, battery, IMU, wheel speed, etc.)
-- **Virtual / derived signals** — SOC alias, energy usage (kW), vehicle stationary, engine status, computed from raw CAN values
-- **CAN simulator** — `can_simulator_sender.py` generates a physics-aware fake vehicle bus for offline testing
-- **Headless library** — `can_monitor.py` can be imported in any Python project without a GUI
+Both tools share the same dark UI theme, COM port selector, and DBC file loader — run them simultaneously on the same PC with two PCAN-USB adapters to test without real vehicle hardware.
 
 ---
 
-## Hardware Requirements
+## Screenshots
 
-- [PEAK PCAN-USB](https://www.peak-system.com/PCAN-USB.199.0.html) or PCAN-USB Pro adapter  
-- CAN bus with 120 Ω termination resistors at each end of the bus
+| Phase 1 — CAN Simulator | Phase 2 — CAN Dashboard |
+|---|---|
+| ![Simulator](docs/screenshots/simulator.png) | ![Dashboard](docs/screenshots/dashboard.png) |
 
-### Connection Diagram
+| Config bar | Live signal table |
+|---|---|
+| ![Config bar](docs/screenshots/config_bar.png) | ![Signals](docs/screenshots/signals.png) |
+
+---
+
+## System Overview
+
+### Two-Phase Architecture
 
 ```
-┌─────────────┐   USB   ┌──────────────────┐   CAN   ┌─────────────────────────┐
-│             │─────────│                  │─────────│                         │
-│  PC / Laptop│         │  PCAN-USB Adapter│  CAN_H  │  Vehicle CAN Bus        │
-│             │         │  (PEAK Systems)  │─────────│  (ECUs, controllers...) │
-└─────────────┘         │                  │  CAN_L  │                         │
-                        └──────────────────┘─────────└─────────────────────────┘
+ ┌─────────────────────────────────────────────────────────────┐
+ │                           PC                                │
+ │                                                             │
+ │   ┌─────────────────────────────────────────────────────┐   │
+ │   │  can_simulator_sender.py          Phase 1 — TX      │   │
+ │   │  Reads DBC · generates fake signals · sends frames  │   │
+ │   └─────────────────────────────────────────────────────┘   │
+ │                                                             │
+ │   ┌─────────────────────────────────────────────────────┐   │
+ │   │  can_dashboard_gui.py             Phase 2 — RX      │   │
+ │   │  Receives frames · decodes via DBC · shows live UI  │   │
+ │   └─────────────────────────────────────────────────────┘   │
+ │                                                             │
+ └──────────────┬──────────────────────────┬──────────────────┘
+                │ USB                       │ USB
+       ┌────────▼─────────┐       ┌─────────▼────────┐
+       │   PCAN-USB 1     │       │   PCAN-USB 2     │
+       │   PCAN_USBBUS1   │       │   PCAN_USBBUS2   │
+       │   (Simulator TX) │       │   (Dashboard RX) │
+       └────────┬─────────┘       └─────────┬────────┘
+             [120 Ω]                      [120 Ω]
+                │                           │
+                └──────────── CAN ──────────┘
+                          CAN_H / CAN_L
+                            500 kbps
 ```
 
 ```mermaid
-graph LR
-    PC["💻 PC / Laptop\n(USB)"] -->|USB cable| PCAN["🔌 PCAN-USB Adapter\nPeak Systems"]
-    PCAN -->|"CAN_H / CAN_L\n(DB9 or bare wire)"| BUS["🚌 CAN Bus\n500 kbps"]
-    BUS --> ECU1["ECU 1\n(Motor Controller)"]
-    BUS --> ECU2["ECU 2\n(Battery BMS)"]
-    BUS --> ECU3["ECU N\n(...)"]
+graph TD
+    PC["💻 PC\n──────────────────────\n📡 can_simulator_sender.py\nPhase 1 · TX\n──────────────────────\n📺 can_dashboard_gui.py\nPhase 2 · RX"]
+
+    PCAN1["🔌 PCAN-USB 1\nPCAN_USBBUS1\nSimulator TX"]
+    PCAN2["🔌 PCAN-USB 2\nPCAN_USBBUS2\nDashboard RX"]
+
+    R1["▭ 120 Ω"]
+    R2["▭ 120 Ω"]
+
+    BUS["⚡ CAN Bus\nCAN_H / CAN_L · 500 kbps"]
+
+    PC -->|USB| PCAN1
+    PC -->|USB| PCAN2
+    PCAN1 --> R1
+    PCAN2 --> R2
+    R1 --> BUS
+    R2 --> BUS
 ```
 
 ### Wiring Reference
@@ -52,14 +83,37 @@ graph LR
 | 7 | CAN_H | White |
 | 3 / 6 | GND (optional shield) | Black |
 
-> **Tip:** Always ensure 120 Ω termination resistors are fitted at both physical ends of the CAN bus.  
-> The PCAN-USB adapter has a built-in software-selectable terminator.
+> **Termination:** fit a 120 Ω resistor at each physical end of the CAN bus.  
+> PCAN-USB adapters have a built-in software-selectable terminator — enable it when the adapter is at a bus endpoint.
 
-### Dashboard UI
+---
 
-| Config bar | Live signals |
-|---|---|
-| ![Config bar](docs/screenshots/config_bar.png) | ![Signal table](docs/screenshots/signals.png) |
+## Features
+
+### Phase 1 — CAN Simulator
+
+- **DBC-driven simulation** — loads any `.dbc` file and transmits all its messages at configurable rate
+- **Physics-based vehicle model** — speed, RPM, SOC, battery, torque, temperatures, IMU, wheel speeds all evolve realistically with Gaussian noise
+- **COM port selector** — choose PCAN channel, bitrate (125k–1M), and TX interval (1–100 ms) from the GUI
+- **Live signal panel** — scrollable table showing every transmitted signal updated in real time
+- **Transmit log** — timestamped log of connection events and periodic cycle snapshots
+- **Headless CLI mode** — `--no-gui` flag for scripted / automated testing
+
+### Phase 2 — CAN Dashboard
+
+- **Live signal display** — all CAN signals grouped by message ID, updating at 20 Hz
+- **COM port selector** — choose any PCAN USB channel and reconnect on the fly
+- **DBC file loader** — browse and load any `.dbc` file; signal rows rebuild automatically
+- **Built-in DBC** — ships with a full RC40 vehicle bus definition (speed, torque, battery, IMU, wheel speed, etc.)
+- **Virtual / derived signals** — SOC alias, energy usage (kW), vehicle stationary state, computed automatically
+- **Headless library** — `can_monitor.py` can be imported in any Python project without a GUI
+
+---
+
+## Hardware Requirements
+
+- [PEAK PCAN-USB](https://www.peak-system.com/PCAN-USB.199.0.html) or PCAN-USB Pro adapter (one per phase when running both simultaneously)
+- CAN bus with 120 Ω termination resistors at each physical end
 
 ---
 
@@ -96,52 +150,24 @@ Download and install the [PEAK PCAN Basic driver](https://www.peak-system.com/So
 
 ## Usage
 
-### Dashboard GUI
-
-```bash
-python can_dashboard_gui.py
-```
-
-With explicit channel and bitrate:
-
-```bash
-python can_dashboard_gui.py --channel PCAN_USBBUS1 --bitrate 500000
-```
-
-#### Runtime controls
-
-| Control | How to use |
-|---|---|
-| **COM PORT** dropdown | Select the PCAN channel (`PCAN_USBBUS1`–`PCAN_USBBUS8`) or type a custom name |
-| **CONNECT** button | Reconnect the monitor on the selected channel |
-| **DBC FILE** field | Type a path or use the BROWSE button to pick a `.dbc` file |
-| **LOAD DBC** button | Reload the database; signal rows rebuild automatically |
-
-### CAN Simulator (no hardware needed)
-
-Generates a physics-based fake vehicle on the bus for testing.  
-Launching without arguments opens the GUI:
+### Phase 1 — CAN Simulator
 
 ```bash
 python can_simulator_sender.py
 ```
 
-![Simulator Screenshot](docs/screenshots/simulator.png)
-
-#### Simulator GUI controls
+Launches the simulator GUI. Select the PCAN channel, bitrate, TX interval, and optionally load a custom DBC, then press **▶ START SIMULATION**.
 
 | Control | Description |
 |---|---|
-| **COM PORT** dropdown | PCAN channel to transmit on |
-| **BITRATE** dropdown | 125k / 250k / 500k / 1M |
-| **TX INTERVAL** dropdown | Frame period: 1 ms – 100 ms |
-| **DBC FILE** + BROWSE | Load a custom DBC to transmit its message set |
-| **LOAD DBC** button | Apply the selected DBC (only when stopped) |
+| **COM PORT** dropdown | PCAN channel to transmit on (`PCAN_USBBUS1`–`PCAN_USBBUS8`) |
+| **BITRATE** dropdown | CAN bitrate: 125k / 250k / 500k / 1M |
+| **TX INTERVAL** dropdown | Frame period: 1 ms – 100 ms (default 10 ms = 100 Hz) |
+| **DBC FILE** + **BROWSE** | Load a custom DBC; signals not in the vehicle model default to 0 |
+| **LOAD DBC** | Apply the selected DBC and refresh the live signal panel (stops simulation first) |
 | **▶ START** / **■ STOP** | Toggle simulation on/off |
-| Live values panel | Shows Speed, RPM, SOC, Battery V/A, Gear, Motor Temp, Distance in real time |
-| Transmit log | Scrollable log of cycle snapshots and connection events |
-
-Run the simulator in one window and the dashboard in another to see live data without real hardware.
+| Live signal panel | Scrollable table of all transmitted signals, updated at 10 Hz |
+| Transmit log | Timestamped log of connection events and per-100-cycle snapshots |
 
 #### Headless / CLI mode
 
@@ -149,15 +175,52 @@ Run the simulator in one window and the dashboard in another to see live data wi
 python can_simulator_sender.py --no-gui --channel PCAN_USBBUS1 --bitrate 500000 --interval 0.01
 ```
 
+---
+
+### Phase 2 — CAN Dashboard
+
+```bash
+python can_dashboard_gui.py
+```
+
+With explicit startup parameters:
+
+```bash
+python can_dashboard_gui.py --channel PCAN_USBBUS2 --bitrate 500000
+```
+
+| Control | Description |
+|---|---|
+| **COM PORT** dropdown | PCAN channel to listen on (`PCAN_USBBUS1`–`PCAN_USBBUS8`) |
+| **CONNECT** button | Reconnect the monitor on the selected channel |
+| **DBC FILE** + **BROWSE** | Pick a `.dbc` file to use for decoding |
+| **LOAD DBC** | Reload the database; all signal rows rebuild from the new DBC |
+| Signal table | All signals grouped by message ID, value + unit updated at 20 Hz |
+
+#### Running both phases together (loopback test)
+
+1. Wire two PCAN-USB adapters together (CAN\_H to CAN\_H, CAN\_L to CAN\_L, 120 Ω at each end)
+2. Open **two terminals**:
+   ```bash
+   # Terminal 1 — Simulator (TX on USBBUS1)
+   python can_simulator_sender.py
+
+   # Terminal 2 — Dashboard (RX on USBBUS2)
+   python can_dashboard_gui.py
+   ```
+3. Start the simulator — signals appear live in the dashboard
+
+---
+
 ### Library usage (headless)
 
 ```python
 from can_monitor import CANMonitor
 
-mon = CANMonitor(channel="PCAN_USBBUS1", bitrate=500000)
-mon.subscribe("VS", lambda name, val: print(f"Speed: {val:.1f} km/h"))
-mon.subscribe("BT_SOC", lambda name, val: print(f"SOC: {val:.1f} %"))
-mon.subscribe("*", lambda name, val: ...)   # every signal
+mon = CANMonitor(channel="PCAN_USBBUS2", bitrate=500000)
+mon.subscribe("VS",     lambda name, val: print(f"Speed: {val:.1f} km/h"))
+mon.subscribe("BT_SOC", lambda name, val: print(f"SOC:   {val:.1f} %"))
+mon.subscribe("*",      lambda name, val: ...)   # every signal
 mon.start()
 
 import time
@@ -166,10 +229,10 @@ print(mon.get_all())   # snapshot dict of all current values
 mon.stop()
 ```
 
-Load a custom DBC file:
+Custom DBC:
 
 ```python
-mon = CANMonitor(channel="PCAN_USBBUS1", bitrate=500000, dbc_path="my_vehicle.dbc")
+mon = CANMonitor(channel="PCAN_USBBUS2", bitrate=500000, dbc_path="my_vehicle.dbc")
 ```
 
 ---
@@ -189,8 +252,9 @@ The built-in DBC covers the **RC40 vehicle bus**:
 | TRAILER\_STATUS | 0x123 | Trailer connection state |
 | CHARGER\_STATUS | 0x234 | Charger connection state |
 
-To use your own DBC: click **BROWSE** in the dashboard, select the file, then click **LOAD DBC**.  
-Signal descriptions fall back to the DBC `SG_` comment field, then the raw signal name.
+**Using a custom DBC:** click **BROWSE**, select the file, then **LOAD DBC**.  
+Signal descriptions fall back to the DBC `SG_` comment field, then the raw signal name.  
+Signals in the DBC that are not in the built-in vehicle model will transmit as `0.0`.
 
 ---
 
@@ -198,116 +262,104 @@ Signal descriptions fall back to the DBC `SG_` comment field, then the raw signa
 
 ```
 CAN_simulator/
-├── can_dashboard_gui.py     # Tkinter GUI — dashboard + config bar
-├── can_monitor.py           # Headless CAN monitor library (no GUI deps)
-├── can_simulator_sender.py  # Physics-based CAN frame generator for testing
-├── simpleTest.py            # Minimal usage example
+├── can_simulator_sender.py  # Phase 1 — simulator GUI + headless CLI
+├── can_dashboard_gui.py     # Phase 2 — live dashboard GUI
+├── can_monitor.py           # Shared headless CAN monitor library (no GUI deps)
+├── simpleTest.py            # Minimal library usage example
 ├── docs/
-│   └── screenshots/         # Place your UI screenshots here
+│   └── screenshots/         # Place UI screenshots here (see README image refs)
+├── LICENSE
 └── README.md
 ```
 
 ### Python Files
 
-#### `can_monitor.py` — CAN Monitor Library
+#### `can_simulator_sender.py` — Phase 1: CAN Simulator
 
-The core engine. No GUI dependencies — can be imported standalone in any Python project.
+Generates a physics-based fake vehicle and transmits it onto the CAN bus.
 
 | Component | Description |
 |---|---|
-| `CANMonitor` | Main class. Connects to PCAN bus, decodes frames, fires callbacks |
-| `CANMonitor.start()` | Spawns a daemon thread that reads and decodes CAN frames |
-| `CANMonitor.stop()` | Gracefully shuts down the bus connection |
-| `CANMonitor.subscribe(signal, cb)` | Register a callback for a named signal or `"*"` for all |
-| `CANMonitor.get(signal)` | Poll the latest value of any signal |
+| `VehicleSimState` | Physics model: speed, RPM, SOC, temperatures, pedals, gear |
+| `VehicleSimState.step(dt)` | Advance simulation by `dt` seconds with Gaussian noise |
+| `VehicleSimState.signal_values()` | Returns dict of all RC40 signal values for the current state |
+| `clamp_to_signal(sig, val)` | Clamps a value to the signal's DBC-defined min/max range |
+| `SimulatorApp` | Tkinter GUI — config bar, ▶/■ button, scrollable live signal panel, TX log |
+| `_draw_can_icon(size, tx)` | Programmatically draws the CAN bus topology icon (TX variant) |
+| `main()` | Headless CLI entry point — use `--no-gui` to skip the GUI |
+
+Signals simulated per cycle: vehicle speed, RPM, gear, pedals, motor torque, battery SOC/V/A, temperatures (motor, MCU, cell), IMU pitch/roll/yaw, wheel speed frequencies, articulation angle.
+
+---
+
+#### `can_dashboard_gui.py` — Phase 2: CAN Dashboard
+
+Receives and decodes live CAN frames, renders all signals in a scrollable table.
+
+| Component | Description |
+|---|---|
+| `CANDashboard` | Main `tk.Tk` window — wires `CANMonitor`, builds UI, runs 20 Hz update loop |
+| `_build_config_bar()` | Top bar: COM port + CONNECT, DBC path + BROWSE / LOAD DBC |
+| `_rebuild_signals()` | Clears and recreates all signal rows from the active DBC |
+| `_on_connect_clicked()` | Stops monitor, creates new one on selected channel, restarts |
+| `_on_dbc_load()` | Loads selected DBC, restarts monitor, rebuilds signal rows |
+| `_schedule_ui_update()` | 20 Hz loop: flushes pending signal updates to the UI |
+| `SignalRow` | Row widget — signal name, description, live value, unit |
+| `_draw_can_icon(size, tx)` | Programmatically draws the CAN bus topology icon (RX variant) |
+
+**Data flow:**
+
+```
+CAN bus frames
+    ↓  (python-can PCAN driver)
+CANMonitor._rx_loop()              ← daemon thread
+    ↓  cantools DBC decode
+CANMonitor._dispatch()             ← fires callbacks, stores values
+    ↓  thread-safe lock
+CANDashboard._on_signal()          ← queues update in _pending dict
+    ↓  50 ms timer (20 Hz)
+CANDashboard._schedule_ui_update() ← batch flush
+    ↓
+SignalRow.update_value()           ← updates label text in UI
+```
+
+---
+
+#### `can_monitor.py` — Shared CAN Monitor Library
+
+The core decoding engine. No GUI dependencies — import directly in any Python project.
+
+| Component | Description |
+|---|---|
+| `CANMonitor` | Connects to PCAN bus, decodes frames via DBC, fires signal callbacks |
+| `CANMonitor.subscribe(signal, cb)` | Register callback for a named signal or `"*"` for all signals |
+| `CANMonitor.get(signal)` | Poll the latest decoded value |
 | `CANMonitor.get_all()` | Snapshot dict of all current signal values |
 | `CANMonitor.inject(signal, value)` | Push a simulated or virtual value into the pipeline |
-| `CANMonitor.db` | Access to the underlying `cantools` database |
-| `CANMonitor.rx_rate` | Current message receive rate in messages/second |
-| `SIGNAL_DESCRIPTIONS` | Dict mapping raw signal names → human-readable labels |
+| `CANMonitor.db` | Access to the underlying `cantools` database object |
+| `SIGNAL_DESCRIPTIONS` | Dict: raw signal name → human-readable label |
 
-**Constructor parameters:**
+**Constructor:**
 
 ```python
 CANMonitor(
     channel="PCAN_USBBUS2",   # PCAN channel name
     bitrate=500_000,           # CAN bus bitrate in bps
     retry_interval=3.0,        # seconds between reconnect attempts
-    dbc_path=None,             # path to a .dbc file (None = use built-in)
+    dbc_path=None,             # path to .dbc file  (None = use built-in)
 )
 ```
 
-**Virtual / derived signals** computed automatically on every decoded frame:
+**Virtual / derived signals** (auto-computed after every decoded frame):
 
-| Signal | Derived from | Description |
+| Signal | Source | Description |
 |---|---|---|
-| `soc` | `BT_SOC` | Battery state of charge alias |
-| `energy_usage_kw` | `BT_C × BT_V / 1000` | Instantaneous power in kW |
-| `energy_usage_stat` | `BT_C` sign | `"discharge"` / `"generate"` / `"free"` |
-| `vs` | `VS < 0.5` | Vehicle stationary flag (`"0"` / `"1"`) |
-| `ss` | `VS < 0.5` | Standstill state (`"on"` / `"off"`) |
-| `truck_eng_stat` | `AETQ > 0` | Engine status (`"on"` / `"off"`) |
-
----
-
-#### `can_dashboard_gui.py` — Dashboard GUI
-
-Built on `tkinter`. Imports `CANMonitor` and renders signal values in real time.
-
-| Component | Description |
-|---|---|
-| `CANDashboard` | Main `tk.Tk` window — wires monitor, builds UI, runs update loop |
-| `_build_config_bar()` | Top bar: COM port dropdown + CONNECT, DBC path + BROWSE/LOAD |
-| `_build_ui()` | Header, column labels, scrollable signal area, footer |
-| `_rebuild_signals()` | Clears and recreates all signal rows from the current DBC |
-| `_on_connect_clicked()` | Stops monitor, creates new one on selected channel, restarts |
-| `_on_dbc_browse()` | Opens file-picker dialog filtered to `.dbc` files |
-| `_on_dbc_load()` | Loads selected DBC, restarts monitor, rebuilds signal rows |
-| `_schedule_ui_update()` | 20 Hz loop: flushes pending signal updates to the UI |
-| `SignalRow` | One row widget — signal name, description, live value, unit |
-| `Sparkline` | Mini trend chart canvas (available, disabled by default) |
-
-**Data flow:**
-
-```
-CAN bus frames
-    ↓  (python-can)
-CANMonitor._rx_loop()          ← daemon thread
-    ↓  cantools decode
-CANMonitor._dispatch()         ← fires callbacks + stores values
-    ↓  thread-safe queue
-CANDashboard._on_signal()      ← writes to _pending dict
-    ↓  50 ms timer (20 Hz)
-CANDashboard._schedule_ui_update()
-    ↓  batch flush
-SignalRow.update_value()       ← updates label text
-```
-
----
-
-#### `can_simulator_sender.py` — CAN Frame Simulator
-
-Generates a realistic fake vehicle on the CAN bus. Use this when no real hardware is available.
-
-| Component | Description |
-|---|---|
-| `VehicleSimState` | Physics model: speed, RPM, SOC, temperatures, pedals, gear |
-| `VehicleSimState.step(dt)` | Advance simulation by `dt` seconds with Gaussian noise |
-| `VehicleSimState.signal_values()` | Returns dict of all signal values for the current state |
-| `clamp_to_signal(sig, val)` | Clamps a value to the signal's defined min/max range |
-| `SimulatorApp` | `tk.Tk` GUI window — config bar, live stats, transmit log, start/stop |
-| `main()` | Headless CLI entry point (`--no-gui` flag) |
-
-Signals simulated per cycle:
-
-- Vehicle speed (oscillating 0–120 km/h), RPM, gear
-- Accelerator / brake pedal position
-- Motor torque request and feedback
-- Battery SOC, voltage, current
-- Motor and battery temperatures
-- IMU pitch, roll, yaw (sinusoidal)
-- Wheel speed sensor frequencies
-- Articulation angle
+| `soc` | `BT_SOC` | Battery SOC alias |
+| `energy_usage_kw` | `BT_C × BT_V ÷ 1000` | Instantaneous power in kW |
+| `energy_usage_stat` | sign of `BT_C` | `"discharge"` / `"generate"` / `"free"` |
+| `vs` | `VS < 0.5` | Vehicle stationary: `"0"` / `"1"` |
+| `ss` | `VS < 0.5` | Standstill: `"on"` / `"off"` |
+| `truck_eng_stat` | `AETQ > 0` | Engine status: `"on"` / `"off"` |
 
 ---
 
@@ -319,8 +371,6 @@ mon = CANMonitor(channel="PCAN_USBBUS2")
 mon.start()
 # prints SOC value + unit every second
 ```
-
-Use this as a starting point for custom integrations.
 
 ---
 
