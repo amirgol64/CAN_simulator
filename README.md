@@ -94,7 +94,7 @@ graph TD
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/CAN_simulator.git
+git clone https://github.com/amirgol64/CAN_simulator.git
 cd CAN_simulator
 ```
 
